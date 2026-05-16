@@ -3,13 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FX Camera App</title>
+    <title>AI Interactive Camera App</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
     <style>
         :root {
             --bg-color: #0a0a0c;
             --panel-bg: rgba(20, 20, 25, 0.85);
-            --accent-color: #ff3b30;
-            --accent-glow: rgba(255, 59, 48, 0.5);
+            --accent-color: #00ffcc;
+            --accent-glow: rgba(0, 255, 204, 0.5);
             --text-color: #ffffff;
             --text-muted: #8e8e93;
         }
@@ -24,14 +29,13 @@
         body {
             background-color: var(--bg-color);
             color: var(--text-color);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             overflow: hidden;
             position: relative;
             height: 100vh;
             width: 100vw;
         }
 
-        /* カメラプレビュー表示エリア */
         #canvas-container {
             position: absolute;
             top: 0;
@@ -48,9 +52,9 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            transform: scaleX(-1); /* 自撮り用に鏡面反転 */
         }
 
-        /* 上部ヘッダーパネル */
         header {
             position: absolute;
             top: 0;
@@ -65,11 +69,11 @@
         }
 
         h1 {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             font-weight: 700;
             letter-spacing: 2px;
             text-transform: uppercase;
-            background: linear-gradient(45deg, #fff, var(--text-muted));
+            background: linear-gradient(45deg, #00ffcc, #fff);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -79,26 +83,18 @@
             align-items: center;
             gap: 8px;
             font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--accent-color);
+            color: #ff3b30;
             animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { opacity: 0.5; }
         }
 
         #recording-dot {
             width: 10px;
             height: 10px;
-            background-color: var(--accent-color);
+            background-color: #ff3b30;
             border-radius: 50%;
-            box-shadow: 0 0 8px var(--accent-glow);
+            box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
         }
 
-        /* 下部コントロールセンター */
         .controls-container {
             position: absolute;
             bottom: 0;
@@ -113,7 +109,6 @@
             align-items: center;
         }
 
-        /* エフェクトセレクター（横スクロール可能で今後の追加が容易） */
         .fx-selector {
             width: 100%;
             max-width: 600px;
@@ -121,13 +116,10 @@
             gap: 12px;
             overflow-x: auto;
             padding: 5px;
-            scroll-behavior: smooth;
-            scrollbar-width: none; /* Firefox用 */
+            scrollbar-width: none;
         }
 
-        .fx-selector::-webkit-scrollbar {
-            display: none; /* Chrome, Safari用 */
-        }
+        .fx-selector::-webkit-scrollbar { display: none; }
 
         .fx-btn {
             flex: 0 0 auto;
@@ -139,24 +131,24 @@
             font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
             backdrop-filter: blur(10px);
         }
 
         .fx-btn.active {
             color: #000;
-            background: #fff;
-            border-color: #fff;
-            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.3);
+            background: var(--accent-color);
+            border-color: var(--accent-color);
+            box-shadow: 0 4px 15px var(--accent-glow);
             transform: scale(1.05);
         }
 
-        /* シャッター・録画ボタン */
         .action-container {
             display: flex;
             justify-content: center;
             align-items: center;
             width: 100%;
+            position: relative;
         }
 
         .record-btn-outer {
@@ -176,43 +168,36 @@
             height: 56px;
             background-color: #ffffff;
             border-radius: 50%;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.3s ease;
         }
 
-        /* 録画中のボタンアジテーション */
-        .record-btn-outer.recording {
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-
+        .record-btn-outer.recording { border-color: rgba(255, 255, 255, 0.3); }
         .record-btn-outer.recording .record-btn-inner {
-            background-color: var(--accent-color);
+            background-color: #ff3b30;
             border-radius: 8px;
             transform: scale(0.75);
-            box-shadow: 0 0 20px var(--accent-glow);
         }
 
-        /* インカメラ・アウトカメラ切り替えボタン */
-        .flip-btn {
+        #loading-overlay {
             position: absolute;
-            right: 40px;
-            background: var(--panel-bg);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            color: white;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #0a0a0c;
+            z-index: 100;
             display: flex;
             justify-content: center;
             align-items: center;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            transition: opacity 0.5s ease;
         }
     </style>
 </head>
 <body>
 
+    <div id="loading-overlay">AI ENGINE LOADING...</div>
+
     <header>
-        <h1>FX-Engine v1.0</h1>
+        <h1>AI-FX Engine v2.0</h1>
         <div id="recording-status">
             <div id="recording-dot"></div>
             <span id="recording-time">00:00</span>
@@ -224,23 +209,21 @@
     </div>
 
     <div class="controls-container">
-        <!-- エフェクト選択バー（今後追加した場合は、ここにbuttonを増やすだけで自動追従します） -->
         <div class="fx-selector" id="fxSelector">
             <button class="fx-btn active" data-effect="none">RAW (NO FX)</button>
+            <button class="fx-btn" data-effect="cyber_eye">👁️ CYBER EYE</button>
+            <button class="fx-btn" data-effect="hand_aura">✨ HAND AURA</button>
             <button class="fx-btn" data-effect="glitch">CYBER GLITCH</button>
             <button class="fx-btn" data-effect="vhs">Y2K VHS</button>
-            <button class="fx-btn" data-effect="kaleidoscope">KALEIDO</button>
         </div>
 
         <div class="action-container">
             <div class="record-btn-outer" id="recordBtn">
                 <div class="record-btn-inner"></div>
             </div>
-            <button class="flip-btn" id="flipBtn">🔄</button>
         </div>
     </div>
 
-    <!-- ビデオ非表示用要素 -->
     <video id="video" autoplay playsinline muted style="display:none;"></video>
 
     <script>
@@ -248,10 +231,10 @@
         const canvas = document.getElementById('glCanvas');
         const ctx = canvas.getContext('2d');
         const recordBtn = document.getElementById('recordBtn');
-        const flipBtn = document.getElementById('flipBtn');
         const fxSelector = document.getElementById('fxSelector');
         const recStatus = document.getElementById('recording-status');
         const recTime = document.getElementById('recording-time');
+        const loadingOverlay = document.getElementById('loading-overlay');
 
         let currentEffect = 'none';
         let mediaRecorder;
@@ -259,177 +242,190 @@
         let isRecording = false;
         let startTime;
         let timerInterval;
-        let currentFacingMode = 'user'; // 'user'（内カメラ） or 'environment'（外カメラ）
 
-        // グリッチエフェクト用の変動数
+        // AIトラッキングデータ保持用オブジェクト
+        let aiData = {
+            faceLandmarks: null,
+            handLandmarks: null
+        };
+
         let glitchT = 0;
-        let vhsT = 0;
+        let pulseRadius = 0;
 
-        // 1. カメラ起動
-        async function initCamera() {
-            if (video.srcObject) {
-                video.srcObject.getTracks().forEach(track => track.stop());
+        // 1. AI認識エンジン初期化 (MediaPipe)
+        const faceDetection = new FaceDetection({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
+        });
+        faceDetection.setOptions({ modelSelection: 0, minDetectionConfidence: 0.5 });
+        faceDetection.onResults((results) => {
+            if (results.detections && results.detections.length > 0) {
+                aiData.faceLandmarks = results.detections[0].landmarks;
+            } else {
+                aiData.faceLandmarks = null;
             }
-
-            const constraints = {
-                video: {
-                    facingMode: currentFacingMode,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
-                audio: true // 音声も合わせて記録
-            };
-
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                video.play();
-            } catch (err) {
-                console.error("カメラの起動に失敗しました: ", err);
-                // オーディオなしで再試行（PCなどでマイク許可がない場合用）
-                constraints.audio = false;
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                video.play();
-            }
-        }
-
-        // メタデータロード時にキャンバスサイズをアスペクト比に合わせる
-        video.addEventListener('loadedmetadata', () => {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            requestAnimationFrame(render);
         });
 
-        // 2. リアルタイム・エフェクト描画コアエンジン
-        function render() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                // 基本の描画
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-                // 選択されているエフェクトの関数を実行
-                if (currentEffect === 'glitch') {
-                    applyGlitchEffect();
-                } else if (currentEffect === 'vhs') {
-                    applyVHSEffect();
-                } else if (currentEffect === 'kaleidoscope') {
-                    applyKaleidoscopeEffect();
-                }
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                aiData.handLandmarks = results.multiHandLandmarks[0];
+            } else {
+                aiData.handLandmarks = null;
             }
-            requestAnimationFrame(render);
+        });
+
+        // 2. カメラのセットアップとMediaPipeループの起動
+        async function initCamera() {
+            canvas.width = 1280;
+            canvas.height = 720;
+
+            const camera = new Camera(video, {
+                onFrame: async () => {
+                    // 毎フレームAIによる手と顔の検出を実行
+                    await faceDetection.send({ image: video });
+                    await hands.send({ image: video });
+                    render();
+                },
+                width: 1280,
+                height: 720,
+                facingMode: 'user' // 自撮り優先（インタラクティブのため）
+            });
+            
+            camera.start().then(() => {
+                loadingOverlay.style.opacity = 0;
+                setTimeout(() => loadingOverlay.style.display = 'none', 500);
+            });
         }
 
-        // --- エフェクトロジックの実装 ---
+        // 3. 描画 & エフェクト処理のメインループ
+        function render() {
+            ctx.clearRect(0,0,canvas.width, canvas.height);
+            // カメラ映像を描画
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // ① サイバー・グリッチ ＆ RGBズレ
+            // エフェクト分岐
+            if (currentEffect === 'cyber_eye') applyCyberEye();
+            if (currentEffect === 'hand_aura') applyHandAura();
+            if (currentEffect === 'glitch') applyGlitchEffect();
+            if (currentEffect === 'vhs') applyVHSEffect();
+        }
+
+        // --- 🧪 インタラクティブ・エフェクトの実装 ---
+
+        // ① サイバー・アイ (目の検出と照準追従)
+        function applyCyberEye() {
+            if (!aiData.faceLandmarks) return;
+
+            // MediaPipeの顔ランドマークインデックス: 0:左目, 1:右目
+            // キャンバスが反転しているため座標を計算
+            const leftEye = aiData.faceLandmarks[0];
+            const rightEye = aiData.faceLandmarks[1];
+
+            pulseRadius = (pulseRadius + 1) % 30;
+
+            [leftEye, rightEye].forEach((eye) => {
+                const x = eye.x * canvas.width;
+                const y = eye.y * canvas.height;
+
+                // 照準サークル（外側）
+                ctx.strokeStyle = '#00ffcc';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(x, y, 25 + Math.sin(pulseRadius*0.2)*3, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // 十字線
+                ctx.beginPath();
+                ctx.moveTo(x - 35, y); ctx.lineTo(x + 35, y);
+                ctx.moveTo(x, y - 35); ctx.lineTo(x, y + 35);
+                ctx.stroke();
+
+                // 中心点
+                ctx.fillStyle = '#ff3b30';
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // ② ハンド・オーラ (手頭からのエフェクト湧き出し)
+        function applyHandAura() {
+            if (!aiData.handLandmarks) return;
+
+            // 人差し指の先端 (Index Finger Tip) はインデックス番号 8
+            const indexTip = aiData.handLandmarks[8];
+            const x = indexTip.x * canvas.width;
+            const y = indexTip.y * canvas.height;
+
+            // ネオンのオーラ波紋を描画
+            glitchT++;
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = '#00ffcc';
+            
+            for(let i=0; i<3; i++) {
+                let r = ((glitchT * 2) + i * 20) % 60;
+                ctx.strokeStyle = `rgba(0, 255, 204, ${1 - r/60})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            // シャドウをリセット
+            ctx.shadowBlur = 0;
+
+            // つまみ動作（親指と人差し指が近づいたら画面がバグる）などの追加ロジックも今後ここに拡張可能
+        }
+
+        // ③ 標準サイバー・グリッチ
         function applyGlitchEffect() {
             glitchT++;
             let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             let data = imgData.data;
             let width = canvas.width;
             let height = canvas.height;
-
-            // 確率で画面を大きく横にスライド（グリッチ）
-            let isGlitchFrame = glitchT % 30 < 4; 
-            let shiftOffset = isGlitchFrame ? Math.floor((Math.random() - 0.5) * 40) : 0;
-
-            // RGBスプリット（色ズレ）処理
-            let split = Math.floor(8 + Math.sin(glitchT * 0.2) * 6);
+            let isGlitchFrame = glitchT % 25 < 3; 
+            let shiftOffset = isGlitchFrame ? Math.floor((Math.random() - 0.5) * 50) : 0;
+            let split = 12;
             let tempData = new Uint8ClampedArray(data);
 
             for (let y = 0; y < height; y++) {
-                // 水平ラインごとの細かなグリッチノイズ
                 let lineShift = shiftOffset;
-                if (isGlitchFrame && Math.random() < 0.15) {
-                    lineShift += Math.floor((Math.random() - 0.5) * 80);
-                }
-
+                if (isGlitchFrame && Math.random() < 0.1) lineShift += Math.floor((Math.random() - 0.5) * 60);
                 for (let x = 0; x < width; x++) {
                     let targetX = (x + lineShift + width) % width;
                     let destIdx = (y * width + x) * 4;
-                    
-                    // 赤チャンネルを左に、青チャンネルを右にズレ書き込み
                     let rX = (targetX - split + width) % width;
                     let bX = (targetX + split) % width;
-
-                    data[destIdx] = tempData[(y * width + rX) * 4];       // R
-                    data[destIdx + 1] = tempData[(y * width + targetX) * 4 + 1]; // G
-                    data[destIdx + 2] = tempData[(y * width + bX) * 4 + 2]; // B
+                    data[destIdx] = tempData[(y * width + rX) * 4];
+                    data[destIdx + 1] = tempData[(y * width + targetX) * 4 + 1];
+                    data[destIdx + 2] = tempData[(y * width + bX) * 4 + 2];
                 }
             }
             ctx.putImageData(imgData, 0, 0);
         }
 
-        // ② Y2K・VHSレトロ
+        // ④ Y2K VHS
         function applyVHSEffect() {
-            vhsT++;
-            // 色調を少しレトロ（セピア・高コントラスト）に寄せる
-            ctx.fillStyle = 'rgba(240, 220, 180, 0.08)'; 
+            glitchT++;
+            ctx.fillStyle = 'rgba(255, 200, 150, 0.05)'; 
             ctx.globalCompositeOperation = 'color-burn';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.globalCompositeOperation = 'source-over';
 
-            // 走査線（横縞ノイズ）
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
-            for (let i = (vhsT % 4); i < canvas.height; i += 4) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            for (let i = (glitchT % 4); i < canvas.height; i += 4) {
                 ctx.fillRect(0, i, canvas.width, 1);
             }
 
-            // 画面の下部に時折入る横方向の激しいノイズバー
-            if (Math.random() < 0.05) {
-                let noiseY = Math.random() * canvas.height;
-                let noiseH = Math.random() * 15 + 5;
-                ctx.fillStyle = 'rgba(255,255,255,0.2)';
-                ctx.fillRect(0, noiseY, canvas.width, noiseH);
-                ctx.drawImage(canvas, 0, noiseY, canvas.width, noiseH, (Math.random()-0.5)*30, noiseY, canvas.width, noiseH);
-            }
-
-            // UIテキストのオーバレイ (RECマークや日付)
-            ctx.font = 'bold 24px monospace';
-            ctx.fillStyle = '#ff3b30';
-            ctx.fillText('● REC', 40, 50);
-
-            ctx.fillStyle = '#ffffff';
-            let now = new Date();
-            let dateStr = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
-            let timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
-            ctx.fillText(dateStr, 40, canvas.height - 80);
-            ctx.fillText(timeStr, 40, canvas.height - 40);
+            ctx.font = 'bold 26px monospace';
+            ctx.fillStyle = '#00ffcc';
+            ctx.fillText('● AI_REC', 50, 60);
         }
 
-        // ③ 万華鏡（4面ミラーカレイドスコープ）
-        function applyKaleidoscopeEffect() {
-            let w = canvas.width;
-            let h = canvas.height;
-            let hw = w / 2;
-            let hh = h / 2;
-
-            // 左上の領域に一度縮小して描画
-            ctx.drawImage(canvas, 0, 0, w, h, 0, 0, hw, hh);
-
-            // 右上（左右反転）
-            ctx.save();
-            ctx.translate(w, 0);
-            ctx.scale(-1, 1);
-            ctx.drawImage(canvas, 0, 0, hw, hh, 0, 0, hw, hh);
-            ctx.restore();
-
-            // 左下（上下反転）
-            ctx.save();
-            ctx.translate(0, h);
-            ctx.scale(1, -1);
-            ctx.drawImage(canvas, 0, 0, hw, hh, 0, 0, hw, hh);
-            ctx.restore();
-
-            // 右下（上下左右反転）
-            ctx.save();
-            ctx.translate(w, h);
-            ctx.scale(-1, -1);
-            ctx.drawImage(canvas, 0, 0, hw, hh, 0, 0, hw, hh);
-            ctx.restore();
-        }
-
-        // 3. インターフェクト切り替えイベントリスナー
+        // --- 📱 UI / 録画管理ロジック ---
         fxSelector.addEventListener('click', (e) => {
             if (e.target.classList.contains('fx-btn')) {
                 document.querySelectorAll('.fx-btn').forEach(btn => btn.classList.remove('active'));
@@ -438,19 +434,9 @@
             }
         });
 
-        // 4. カメラ反転機能
-        flipBtn.addEventListener('click', () => {
-            currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-            initCamera();
-        });
-
-        // 5. リアルタイム録画・ビデオ保存システム
         recordBtn.addEventListener('click', () => {
-            if (!isRecording) {
-                startRecording();
-            } else {
-                stopRecording();
-            }
+            if (!isRecording) startRecording();
+            else stopRecording();
         });
 
         function startRecording() {
@@ -458,54 +444,27 @@
             recordedChunks = [];
             recordBtn.classList.add('recording');
             recStatus.style.display = 'flex';
-            
-            // タイマー開始
             startTime = Date.now();
-            updateTimer();
-            timerInterval = setInterval(updateTimer, 1000);
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                recTime.textContent = `${String(Math.floor(elapsed / 60)).padStart(2,'0')}:${String(elapsed % 60).padStart(2,'0')}`;
+            }, 1000);
 
-            // Canvasの描画ストリームを取得 (30fps)
             const canvasStream = canvas.captureStream(30);
-
-            // マイク音声トラックがあればマージする
             if (video.srcObject && video.srcObject.getAudioTracks().length > 0) {
-                const audioTrack = video.srcObject.getAudioTracks()[0];
-                canvasStream.addTrack(audioTrack);
+                canvasStream.addTrack(video.srcObject.getAudioTracks()[0]);
             }
 
-            // MediaRecorderの初期化（mp4 または webm）
-            let options = { mimeType: 'video/webm;codecs=vp9' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = { mimeType: 'video/webm' };
-            }
-
-            mediaRecorder = new MediaRecorder(canvasStream, options);
-            
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data && e.data.size > 0) {
-                    recordedChunks.push(e.data);
-                }
-            };
-
-            // 録画終了時に自動でmp4としてダウンロード
+            mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm;codecs=vp9' });
+            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
             mediaRecorder.onstop = () => {
                 const blob = new Blob(recordedChunks, { type: 'video/webm' });
                 const url = URL.createObjectURL(blob);
-                
                 const a = document.createElement('a');
-                a.style.display = 'none';
                 a.href = url;
-                // 保存時のファイルネーム（タイムスタンプ付き）
-                a.download = `FX_CAMERA_${Date.now()}.webm`;
-                document.body.appendChild(a);
+                a.download = `AI_FX_${Date.now()}.webm`;
                 a.click();
-                
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                }, 100);
             };
-
             mediaRecorder.start();
         }
 
@@ -514,18 +473,10 @@
             recordBtn.classList.remove('recording');
             recStatus.style.display = 'none';
             clearInterval(timerInterval);
-            
             mediaRecorder.stop();
         }
 
-        function updateTimer() {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
-            const secs = String(elapsed % 60).padStart(2, '0');
-            recTime.textContent = `${mins}:${secs}`;
-        }
-
-        // 初期起動
+        // アプリ始動
         initCamera();
     </script>
 </body>
