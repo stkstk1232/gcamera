@@ -3,481 +3,866 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Interactive Camera App</title>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <title>AI-FX Engine v3.0</title>
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
     <style>
         :root {
-            --bg-color: #0a0a0c;
-            --panel-bg: rgba(20, 20, 25, 0.85);
-            --accent-color: #00ffcc;
-            --accent-glow: rgba(0, 255, 204, 0.5);
-            --text-color: #ffffff;
-            --text-muted: #8e8e93;
+            --bg: #08080a;
+            --panel: rgba(15,15,20,0.88);
+            --accent: #00ffcc;
+            --accent-glow: rgba(0,255,204,0.45);
+            --danger: #ff3b30;
+            --danger-glow: rgba(255,59,48,0.5);
+            --muted: #666680;
         }
+        *{box-sizing:border-box;margin:0;padding:0;user-select:none;}
+        body{background:var(--bg);color:#fff;font-family:-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden;height:100vh;width:100vw;}
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            user-select: none;
-        }
+        /* ─── CANVAS ─── */
+        #canvas-wrap{position:absolute;inset:0;display:flex;justify-content:center;align-items:center;background:#000;z-index:1;}
+        #glCanvas{width:100%;height:100%;object-fit:cover;}
 
-        body {
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            overflow: hidden;
-            position: relative;
-            height: 100vh;
-            width: 100vw;
-        }
+        /* ─── HEADER ─── */
+        header{position:absolute;top:0;left:0;width:100%;padding:18px 22px;background:linear-gradient(to bottom,rgba(0,0,0,.82),transparent);z-index:10;display:flex;justify-content:space-between;align-items:center;}
+        h1{font-size:1rem;font-weight:800;letter-spacing:3px;text-transform:uppercase;background:linear-gradient(90deg,#00ffcc,#a78bfa,#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+        #rec-status{display:none;align-items:center;gap:8px;font-size:.85rem;color:var(--danger);animation:blink 1.4s infinite;}
+        #rec-dot{width:9px;height:9px;background:var(--danger);border-radius:50%;box-shadow:0 0 7px var(--danger);}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
-        #canvas-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1;
-        }
+        /* ─── CONTROLS ─── */
+        .ctrl-wrap{position:absolute;bottom:0;left:0;width:100%;background:linear-gradient(to top,rgba(0,0,0,.92) 45%,transparent);padding:24px 16px 38px;z-index:10;display:flex;flex-direction:column;gap:20px;align-items:center;}
 
-        canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1); /* 自撮り用に鏡面反転 */
-        }
+        /* FX chips */
+        .fx-row{width:100%;max-width:680px;display:flex;gap:10px;overflow-x:auto;padding:4px 2px;scrollbar-width:none;}
+        .fx-row::-webkit-scrollbar{display:none;}
+        .fx-chip{flex:0 0 auto;padding:9px 18px;background:var(--panel);border:1px solid rgba(255,255,255,.09);border-radius:999px;color:var(--muted);font-size:.78rem;font-weight:700;letter-spacing:.5px;cursor:pointer;transition:all .25s;backdrop-filter:blur(12px);}
+        .fx-chip.on{color:#000;background:var(--accent);border-color:var(--accent);box-shadow:0 4px 18px var(--accent-glow);transform:scale(1.06);}
 
-        header {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            padding: 20px;
-            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
-            z-index: 10;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        /* Action row */
+        .act-row{display:flex;justify-content:center;align-items:center;gap:28px;width:100%;max-width:400px;}
 
-        h1 {
-            font-size: 1.1rem;
-            font-weight: 700;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-            background: linear-gradient(45deg, #00ffcc, #fff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+        /* Record button */
+        .rec-outer{width:74px;height:74px;border:4px solid #fff;border-radius:50%;display:flex;justify-content:center;align-items:center;cursor:pointer;transition:all .3s;}
+        .rec-inner{width:54px;height:54px;background:#fff;border-radius:50%;transition:all .3s;}
+        .rec-outer.going{border-color:rgba(255,255,255,.25);}
+        .rec-outer.going .rec-inner{background:var(--danger);border-radius:7px;transform:scale(.74);}
+        .rec-outer.off{border-color:rgba(255,255,255,.15);cursor:not-allowed;pointer-events:none;}
+        .rec-outer.off .rec-inner{background:rgba(255,255,255,.15);}
 
-        #recording-status {
-            display: none;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.9rem;
-            color: #ff3b30;
-            animation: pulse 1.5s infinite;
-        }
+        /* Sub buttons */
+        .sub-btn{background:var(--panel);border:1px solid rgba(255,255,255,.1);width:50px;height:50px;border-radius:50%;color:#fff;font-size:1.2rem;display:flex;justify-content:center;align-items:center;cursor:pointer;backdrop-filter:blur(12px);transition:all .3s;}
+        .sub-btn.danger{border-color:var(--danger);color:var(--danger);box-shadow:0 0 10px var(--danger-glow);background:rgba(255,59,48,.1);}
+        @keyframes spin{from{transform:rotate(0)}to{transform:rotate(180deg)}}
+        .sub-btn.spin{animation:spin .35s ease;}
 
-        #recording-dot {
-            width: 10px;
-            height: 10px;
-            background-color: #ff3b30;
-            border-radius: 50%;
-            box-shadow: 0 0 8px rgba(255, 59, 48, 0.8);
-        }
+        /* Loading */
+        #loader{position:absolute;inset:0;background:var(--bg);z-index:100;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:16px;transition:opacity .5s;}
+        .loader-bar{width:220px;height:2px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden;}
+        .loader-fill{height:100%;background:var(--accent);border-radius:999px;animation:fill 2s ease forwards;}
+        @keyframes fill{from{width:0}to{width:100%}}
+        .loader-txt{font-size:.85rem;letter-spacing:3px;color:var(--muted);}
 
-        .controls-container {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: linear-gradient(to top, rgba(0,0,0,0.9) 40%, transparent);
-            padding: 30px 20px 40px 20px;
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-            align-items: center;
-        }
-
-        .fx-selector {
-            width: 100%;
-            max-width: 600px;
-            display: flex;
-            gap: 12px;
-            overflow-x: auto;
-            padding: 5px;
-            scrollbar-width: none;
-        }
-
-        .fx-selector::-webkit-scrollbar { display: none; }
-
-        .fx-btn {
-            flex: 0 0 auto;
-            padding: 10px 20px;
-            background: var(--panel-bg);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            backdrop-filter: blur(10px);
-        }
-
-        .fx-btn.active {
-            color: #000;
-            background: var(--accent-color);
-            border-color: var(--accent-color);
-            box-shadow: 0 4px 15px var(--accent-glow);
-            transform: scale(1.05);
-        }
-
-        .action-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: 100%;
-            position: relative;
-        }
-
-        .record-btn-outer {
-            width: 76px;
-            height: 76px;
-            border: 4px solid #ffffff;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .record-btn-inner {
-            width: 56px;
-            height: 56px;
-            background-color: #ffffff;
-            border-radius: 50%;
-            transition: all 0.3s ease;
-        }
-
-        .record-btn-outer.recording { border-color: rgba(255, 255, 255, 0.3); }
-        .record-btn-outer.recording .record-btn-inner {
-            background-color: #ff3b30;
-            border-radius: 8px;
-            transform: scale(0.75);
-        }
-
-        #loading-overlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #0a0a0c;
-            z-index: 100;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 1.2rem;
-            letter-spacing: 2px;
-            transition: opacity 0.5s ease;
-        }
+        /* HUD label */
+        #fx-hud{position:absolute;top:64px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.08);padding:5px 14px;border-radius:999px;font-size:.72rem;letter-spacing:2px;color:var(--accent);z-index:10;pointer-events:none;opacity:0;transition:opacity .4s;}
+        #fx-hud.show{opacity:1;}
     </style>
 </head>
 <body>
 
-    <div id="loading-overlay">AI ENGINE LOADING...</div>
+<div id="loader">
+    <div class="loader-txt">AI-FX ENGINE INITIALIZING</div>
+    <div class="loader-bar"><div class="loader-fill"></div></div>
+</div>
 
-    <header>
-        <h1>AI-FX Engine v2.0</h1>
-        <div id="recording-status">
-            <div id="recording-dot"></div>
-            <span id="recording-time">00:00</span>
-        </div>
-    </header>
+<header>
+    <h1>AI-FX Engine v3.0</h1>
+    <div id="rec-status"><div id="rec-dot"></div><span id="rec-time">00:00</span></div>
+</header>
 
-    <div id="canvas-container">
-        <canvas id="glCanvas"></canvas>
+<div id="fx-hud">RAW</div>
+
+<div id="canvas-wrap"><canvas id="glCanvas"></canvas></div>
+
+<div class="ctrl-wrap">
+    <div class="fx-row" id="fxRow">
+        <button class="fx-chip on"  data-fx="none">RAW</button>
+        <button class="fx-chip"     data-fx="fluid">🌊 FLUID TRAILS</button>
+        <button class="fx-chip"     data-fx="lightning">⚡ LIGHTNING</button>
+        <button class="fx-chip"     data-fx="gravity">🌌 GRAVITY WELL</button>
+        <button class="fx-chip"     data-fx="ink">🎨 INK SPLASH</button>
+        <button class="fx-chip"     data-fx="portal">🔮 PORTAL RIFT</button>
+        <button class="fx-chip"     data-fx="cyber_eye">👁️ CYBER EYE</button>
+        <button class="fx-chip"     data-fx="glitch">💀 GLITCH</button>
+        <button class="fx-chip"     data-fx="vhs">📼 VHS</button>
     </div>
-
-    <div class="controls-container">
-        <div class="fx-selector" id="fxSelector">
-            <button class="fx-btn active" data-effect="none">RAW (NO FX)</button>
-            <button class="fx-btn" data-effect="cyber_eye">👁️ CYBER EYE</button>
-            <button class="fx-btn" data-effect="hand_aura">✨ HAND AURA</button>
-            <button class="fx-btn" data-effect="glitch">CYBER GLITCH</button>
-            <button class="fx-btn" data-effect="vhs">Y2K VHS</button>
-        </div>
-
-        <div class="action-container">
-            <div class="record-btn-outer" id="recordBtn">
-                <div class="record-btn-inner"></div>
-            </div>
-        </div>
+    <div class="act-row">
+        <button class="sub-btn" id="camBtn"  title="カメラON/OFF">📷</button>
+        <div class="rec-outer" id="recBtn"><div class="rec-inner"></div></div>
+        <button class="sub-btn" id="flipBtn" title="カメラ切り替え">🔄</button>
     </div>
+</div>
 
-    <video id="video" autoplay playsinline muted style="display:none;"></video>
+<video id="vid" autoplay playsinline muted style="display:none;"></video>
 
-    <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('glCanvas');
-        const ctx = canvas.getContext('2d');
-        const recordBtn = document.getElementById('recordBtn');
-        const fxSelector = document.getElementById('fxSelector');
-        const recStatus = document.getElementById('recording-status');
-        const recTime = document.getElementById('recording-time');
-        const loadingOverlay = document.getElementById('loading-overlay');
+<script>
+/* ═══════════════════════════════════════════════════════════
+   CONSTANTS & STATE
+═══════════════════════════════════════════════════════════ */
+const vid     = document.getElementById('vid');
+const canvas  = document.getElementById('glCanvas');
+const ctx     = canvas.getContext('2d');
+const recBtn  = document.getElementById('recBtn');
+const camBtn  = document.getElementById('camBtn');
+const flipBtn = document.getElementById('flipBtn');
+const fxRow   = document.getElementById('fxRow');
+const recStat = document.getElementById('rec-status');
+const recTime = document.getElementById('rec-time');
+const loader  = document.getElementById('loader');
+const fxHud   = document.getElementById('fx-hud');
 
-        let currentEffect = 'none';
-        let mediaRecorder;
-        let recordedChunks = [];
-        let isRecording = false;
-        let startTime;
-        let timerInterval;
+const W = 1280, H = 720;
+canvas.width = W; canvas.height = H;
 
-        // AIトラッキングデータ保持用オブジェクト
-        let aiData = {
-            faceLandmarks: null,
-            handLandmarks: null
-        };
+let camStream    = null;
+let camOn        = true;
+let facingMode   = 'user';
+let effect       = 'none';
+let isRecording  = false;
+let mediaRec, recChunks, recStart, recTimer;
+let t            = 0; // global frame tick
 
-        let glitchT = 0;
-        let pulseRadius = 0;
+let ai = { face: null, hands: null };
+let faceReady = false, handsReady = false, streamReady = false;
 
-        // 1. AI認識エンジン初期化 (MediaPipe)
-        const faceDetection = new FaceDetection({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
-        });
-        faceDetection.setOptions({ modelSelection: 0, minDetectionConfidence: 0.5 });
-        faceDetection.onResults((results) => {
-            if (results.detections && results.detections.length > 0) {
-                aiData.faceLandmarks = results.detections[0].landmarks;
-            } else {
-                aiData.faceLandmarks = null;
-            }
-        });
+/* ═══════════════════════════════════════════════════════════
+   MEDIAPIPE — initialize with explicit .initialize() to ensure
+   WASM is loaded before any .send() calls
+═══════════════════════════════════════════════════════════ */
+const faceDetect = new FaceDetection({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`
+});
+faceDetect.setOptions({ modelSelection: 0, minDetectionConfidence: 0.5 });
+faceDetect.onResults(r => {
+    ai.face = (r.detections && r.detections.length > 0) ? r.detections[0].landmarks : null;
+});
+faceDetect.initialize().then(() => { faceReady = true; maybeHideLoader(); }).catch(console.warn);
 
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-        hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                aiData.handLandmarks = results.multiHandLandmarks[0];
-            } else {
-                aiData.handLandmarks = null;
-            }
-        });
+const handsDetect = new Hands({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+});
+handsDetect.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+handsDetect.onResults(r => {
+    ai.hands = (r.multiHandLandmarks && r.multiHandLandmarks.length > 0) ? r.multiHandLandmarks : null;
+});
+handsDetect.initialize().then(() => { handsReady = true; maybeHideLoader(); }).catch(console.warn);
 
-        // 2. カメラのセットアップとMediaPipeループの起動
-        async function initCamera() {
-            canvas.width = 1280;
-            canvas.height = 720;
+function maybeHideLoader() {
+    if (faceReady && handsReady && streamReady) {
+        loader.style.opacity = 0;
+        setTimeout(() => loader.style.display = 'none', 600);
+    }
+}
 
-            const camera = new Camera(video, {
-                onFrame: async () => {
-                    // 毎フレームAIによる手と顔の検出を実行
-                    await faceDetection.send({ image: video });
-                    await hands.send({ image: video });
-                    render();
-                },
-                width: 1280,
-                height: 720,
-                facingMode: 'user' // 自撮り優先（インタラクティブのため）
-            });
-            
-            camera.start().then(() => {
-                loadingOverlay.style.opacity = 0;
-                setTimeout(() => loadingOverlay.style.display = 'none', 500);
-            });
+/* ═══════════════════════════════════════════════════════════
+   CAMERA — robust getUserMedia with fallback chain
+═══════════════════════════════════════════════════════════ */
+async function startCamera(mode) {
+    if (camStream) {
+        camStream.getTracks().forEach(tr => tr.stop());
+        camStream = null;
+    }
+    vid.srcObject = null;
+
+    const attempts = [
+        { video: { facingMode: { exact: mode }, width: { ideal: W }, height: { ideal: H } }, audio: false },
+        { video: { facingMode: mode,            width: { ideal: W }, height: { ideal: H } }, audio: false },
+        { video: { facingMode: mode },           audio: false },
+        { video: true,                           audio: false },
+    ];
+
+    let gotStream = false;
+    for (const c of attempts) {
+        try {
+            camStream = await navigator.mediaDevices.getUserMedia(c);
+            gotStream = true;
+            break;
+        } catch (_) { /* try next */ }
+    }
+
+    if (!gotStream) {
+        console.error('No camera available');
+        return;
+    }
+
+    vid.srcObject = camStream;
+
+    // Wait for video to be ready
+    await new Promise(res => {
+        if (vid.readyState >= 2) { res(); return; }
+        const onReady = () => { vid.removeEventListener('canplay', onReady); res(); };
+        vid.addEventListener('canplay', onReady);
+        setTimeout(res, 4000); // hard timeout
+    });
+
+    try { await vid.play(); } catch(_) { /* autoplay policy — still renders via readyState */ }
+
+    streamReady = true;
+    maybeHideLoader();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   COORDINATE HELPERS — mirror X for front camera
+═══════════════════════════════════════════════════════════ */
+function lx(v) { return (facingMode === 'user' ? 1 - v : v) * W; }
+function ly(v) { return v * H; }
+
+/* ═══════════════════════════════════════════════════════════
+   RENDER LOOP
+═══════════════════════════════════════════════════════════ */
+let aiFrame = 0;
+
+function renderLoop() {
+    requestAnimationFrame(renderLoop);
+    t++;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (camOn && vid.readyState >= 2) {
+        // Draw video (mirrored for front cam)
+        ctx.save();
+        if (facingMode === 'user') { ctx.translate(W, 0); ctx.scale(-1, 1); }
+        ctx.drawImage(vid, 0, 0, W, H);
+        ctx.restore();
+
+        // Throttle AI to every other frame
+        if (faceReady && handsReady && ++aiFrame % 2 === 0) {
+            faceDetect.send({ image: vid }).catch(() => {});
+            handsDetect.send({ image: vid }).catch(() => {});
         }
 
-        // 3. 描画 & エフェクト処理のメインループ
-        function render() {
-            ctx.clearRect(0,0,canvas.width, canvas.height);
-            // カメラ映像を描画
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            // エフェクト分岐
-            if (currentEffect === 'cyber_eye') applyCyberEye();
-            if (currentEffect === 'hand_aura') applyHandAura();
-            if (currentEffect === 'glitch') applyGlitchEffect();
-            if (currentEffect === 'vhs') applyVHSEffect();
+        switch (effect) {
+            case 'fluid':     drawFluidTrails(); break;
+            case 'lightning': drawLightning();   break;
+            case 'gravity':   drawGravityWell(); break;
+            case 'ink':       drawInkSplash();   break;
+            case 'portal':    drawPortalRift();  break;
+            case 'cyber_eye': drawCyberEye();    break;
+            case 'glitch':    drawGlitch();      break;
+            case 'vhs':       drawVHS();         break;
         }
+    } else if (!camOn) {
+        ctx.fillStyle = '#08080a';
+        ctx.fillRect(0, 0, W, H);
+        ctx.font = 'bold 36px sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,.3)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('CAMERA OFF', W/2, H/2);
+    }
+}
 
-        // --- 🧪 インタラクティブ・エフェクトの実装 ---
+/* ═══════════════════════════════════════════════════════════
+   ✦  EFFECT 1 — FLUID TRAILS
+   Persistent particle system driven by all 10 fingertips.
+   Particles inherit velocity, then wander via turbulence
+   (layered sin/cos noise). Trails drawn as fading ribbons.
+═══════════════════════════════════════════════════════════ */
+const FINGER_TIPS  = [4, 8, 12, 16, 20];
+const TRAIL_LEN    = 52;
+const TIP_COLORS   = ['#00ffcc','#a78bfa','#fb923c','#f472b6','#38bdf8'];
+let   fluidParts   = [];
+let   fingerHist   = Array.from({ length: 10 }, () => []);
 
-        // ① サイバー・アイ (目の検出と照準追従)
-        function applyCyberEye() {
-            if (!aiData.faceLandmarks) return;
+function noiseVal(x, y, t_) {
+    return Math.sin(x * 0.011 + t_ * 0.017) * Math.cos(y * 0.009 + t_ * 0.022)
+         + Math.sin(x * 0.007 - y * 0.005 + t_ * 0.03) * 0.5;
+}
 
-            // MediaPipeの顔ランドマークインデックス: 0:左目, 1:右目
-            // キャンバスが反転しているため座標を計算
-            const leftEye = aiData.faceLandmarks[0];
-            const rightEye = aiData.faceLandmarks[1];
+function drawFluidTrails() {
+    if (ai.hands) {
+        ai.hands.forEach((hand, hi) => {
+            FINGER_TIPS.forEach((tip, fi) => {
+                const idx = hi * 5 + fi;
+                const cx = lx(hand[tip].x), cy = ly(hand[tip].y);
+                const hist = fingerHist[idx];
+                hist.push({ x: cx, y: cy });
+                if (hist.length > TRAIL_LEN) hist.shift();
 
-            pulseRadius = (pulseRadius + 1) % 30;
-
-            [leftEye, rightEye].forEach((eye) => {
-                const x = eye.x * canvas.width;
-                const y = eye.y * canvas.height;
-
-                // 照準サークル（外側）
-                ctx.strokeStyle = '#00ffcc';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(x, y, 25 + Math.sin(pulseRadius*0.2)*3, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // 十字線
-                ctx.beginPath();
-                ctx.moveTo(x - 35, y); ctx.lineTo(x + 35, y);
-                ctx.moveTo(x, y - 35); ctx.lineTo(x, y + 35);
-                ctx.stroke();
-
-                // 中心点
-                ctx.fillStyle = '#ff3b30';
-                ctx.beginPath();
-                ctx.arc(x, y, 4, 0, Math.PI * 2);
-                ctx.fill();
-            });
-        }
-
-        // ② ハンド・オーラ (手頭からのエフェクト湧き出し)
-        function applyHandAura() {
-            if (!aiData.handLandmarks) return;
-
-            // 人差し指の先端 (Index Finger Tip) はインデックス番号 8
-            const indexTip = aiData.handLandmarks[8];
-            const x = indexTip.x * canvas.width;
-            const y = indexTip.y * canvas.height;
-
-            // ネオンのオーラ波紋を描画
-            glitchT++;
-            ctx.shadowBlur = 20;
-            ctx.shadowColor = '#00ffcc';
-            
-            for(let i=0; i<3; i++) {
-                let r = ((glitchT * 2) + i * 20) % 60;
-                ctx.strokeStyle = `rgba(0, 255, 204, ${1 - r/60})`;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(x, y, r, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-            // シャドウをリセット
-            ctx.shadowBlur = 0;
-
-            // つまみ動作（親指と人差し指が近づいたら画面がバグる）などの追加ロジックも今後ここに拡張可能
-        }
-
-        // ③ 標準サイバー・グリッチ
-        function applyGlitchEffect() {
-            glitchT++;
-            let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            let data = imgData.data;
-            let width = canvas.width;
-            let height = canvas.height;
-            let isGlitchFrame = glitchT % 25 < 3; 
-            let shiftOffset = isGlitchFrame ? Math.floor((Math.random() - 0.5) * 50) : 0;
-            let split = 12;
-            let tempData = new Uint8ClampedArray(data);
-
-            for (let y = 0; y < height; y++) {
-                let lineShift = shiftOffset;
-                if (isGlitchFrame && Math.random() < 0.1) lineShift += Math.floor((Math.random() - 0.5) * 60);
-                for (let x = 0; x < width; x++) {
-                    let targetX = (x + lineShift + width) % width;
-                    let destIdx = (y * width + x) * 4;
-                    let rX = (targetX - split + width) % width;
-                    let bX = (targetX + split) % width;
-                    data[destIdx] = tempData[(y * width + rX) * 4];
-                    data[destIdx + 1] = tempData[(y * width + targetX) * 4 + 1];
-                    data[destIdx + 2] = tempData[(y * width + bX) * 4 + 2];
+                if (hist.length > 1) {
+                    const prev = hist[hist.length - 2];
+                    const spd  = Math.hypot(cx - prev.x, cy - prev.y);
+                    const n    = Math.min(Math.floor(spd * 0.65) + 2, 10);
+                    for (let k = 0; k < n; k++) {
+                        fluidParts.push({
+                            x: cx + (Math.random()-0.5)*8,
+                            y: cy + (Math.random()-0.5)*8,
+                            vx: (cx - prev.x) * 0.15 + (Math.random()-0.5)*1.5,
+                            vy: (cy - prev.y) * 0.15 + (Math.random()-0.5)*1.5 - 0.2,
+                            life: 1.0,
+                            decay: 0.013 + Math.random()*0.016,
+                            r: 2.5 + Math.random()*4.5,
+                            color: TIP_COLORS[(hi*5+fi) % TIP_COLORS.length]
+                        });
+                    }
                 }
-            }
-            ctx.putImageData(imgData, 0, 0);
+            });
+        });
+    } else {
+        fingerHist.forEach(h => h.length = 0);
+    }
+
+    // Render ribbons
+    fingerHist.forEach((hist, idx) => {
+        if (hist.length < 2) return;
+        const col = TIP_COLORS[idx % TIP_COLORS.length];
+        ctx.save();
+        ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+        for (let i = 1; i < hist.length; i++) {
+            const a = i / hist.length;
+            ctx.beginPath();
+            ctx.moveTo(hist[i-1].x, hist[i-1].y);
+            ctx.lineTo(hist[i].x,   hist[i].y);
+            ctx.strokeStyle = col;
+            ctx.globalAlpha = a * 0.8;
+            ctx.lineWidth   = a * 5.5;
+            ctx.shadowBlur  = 10;
+            ctx.shadowColor = col;
+            ctx.stroke();
         }
+        ctx.restore();
+    });
 
-        // ④ Y2K VHS
-        function applyVHSEffect() {
-            glitchT++;
-            ctx.fillStyle = 'rgba(255, 200, 150, 0.05)'; 
-            ctx.globalCompositeOperation = 'color-burn';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.globalCompositeOperation = 'source-over';
+    // Render + update particles
+    ctx.save();
+    for (let i = fluidParts.length - 1; i >= 0; i--) {
+        const p = fluidParts[i];
+        const n = noiseVal(p.x, p.y, t);
+        p.x    += p.vx + Math.cos(n * Math.PI * 2) * 1.1;
+        p.y    += p.vy + Math.sin(n * Math.PI * 2) * 1.1;
+        p.life -= p.decay;
+        if (p.life <= 0) { fluidParts.splice(i, 1); continue; }
+        ctx.globalAlpha = p.life * 0.8;
+        ctx.fillStyle   = p.color;
+        ctx.shadowBlur  = 7;
+        ctx.shadowColor = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
 
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-            for (let i = (glitchT % 4); i < canvas.height; i += 4) {
-                ctx.fillRect(0, i, canvas.width, 1);
-            }
+    if (fluidParts.length > 2000) fluidParts.splice(0, fluidParts.length - 2000);
+}
 
-            ctx.font = 'bold 26px monospace';
-            ctx.fillStyle = '#00ffcc';
-            ctx.fillText('● AI_REC', 50, 60);
+/* ═══════════════════════════════════════════════════════════
+   ✦  EFFECT 2 — LIGHTNING
+   Index finger tip = anode, thumb tip = cathode.
+   Recursive fractal bolt between them.
+   Pinch distance drives intensity; closer = wilder arcs.
+═══════════════════════════════════════════════════════════ */
+function fractalBolt(x1, y1, x2, y2, roughness, depth) {
+    if (depth === 0) { ctx.lineTo(x2, y2); return; }
+    const mx = (x1+x2)/2 + (Math.random()-0.5)*roughness;
+    const my = (y1+y2)/2 + (Math.random()-0.5)*roughness;
+    fractalBolt(x1,y1,mx,my, roughness*0.55, depth-1);
+    if (Math.random() < 0.3) {
+        const bx = mx + (Math.random()-0.5)*roughness*1.4;
+        const by = my + (Math.random()-0.5)*roughness*1.4;
+        ctx.save();
+        ctx.globalAlpha *= 0.45;
+        ctx.beginPath(); ctx.moveTo(mx,my);
+        fractalBolt(mx,my,bx,by,roughness*0.4,depth-2);
+        ctx.stroke();
+        ctx.restore();
+        ctx.moveTo(mx,my);
+    }
+    fractalBolt(mx,my,x2,y2, roughness*0.55, depth-1);
+}
+
+function bolt(x1,y1,x2,y2,alpha,color) {
+    const d = Math.hypot(x2-x1, y2-y1);
+    for (let layer = 3; layer >= 0; layer--) {
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(x1,y1);
+        fractalBolt(x1,y1,x2,y2, d*0.24, 6);
+        ctx.strokeStyle = layer===0 ? '#fff' : color;
+        ctx.lineWidth   = (layer+1)*1.7;
+        ctx.globalAlpha = alpha * (layer===0 ? 0.95 : 0.3 - layer*0.06);
+        ctx.shadowBlur  = 18 + layer*8;
+        ctx.shadowColor = color;
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+function drawLightning() {
+    if (!ai.hands || ai.hands.length === 0) {
+        if (t % 20 === 0) {
+            const sx = Math.random() < 0.5 ? 0 : W;
+            bolt(sx, Math.random()*H*0.4, W*0.25+Math.random()*W*0.5, H*0.3+Math.random()*H*0.45, 0.45, '#a78bfa');
         }
+        return;
+    }
+    ai.hands.forEach(hand => {
+        const [ix, iy] = [lx(hand[8].x), ly(hand[8].y)];
+        const [tx, ty] = [lx(hand[4].x), ly(hand[4].y)];
+        const dist     = Math.hypot(ix-tx, iy-ty);
+        const intensity = Math.max(0, 1 - dist/240);
 
-        // --- 📱 UI / 録画管理ロジック ---
-        fxSelector.addEventListener('click', (e) => {
-            if (e.target.classList.contains('fx-btn')) {
-                document.querySelectorAll('.fx-btn').forEach(btn => btn.classList.remove('active'));
-                e.target.classList.add('active');
-                currentEffect = e.target.getAttribute('data-effect');
-            }
+        // Glow nodes
+        [[ix,iy,'#00ffcc'],[tx,ty,'#f472b6']].forEach(([nx,ny,col]) => {
+            const g = ctx.createRadialGradient(nx,ny,0,nx,ny,32+intensity*38);
+            g.addColorStop(0,col+'cc'); g.addColorStop(1,'transparent');
+            ctx.save();
+            ctx.globalCompositeOperation='screen';
+            ctx.fillStyle=g; ctx.beginPath(); ctx.arc(nx,ny,32+intensity*38,0,Math.PI*2); ctx.fill();
+            ctx.restore();
         });
 
-        recordBtn.addEventListener('click', () => {
-            if (!isRecording) startRecording();
-            else stopRecording();
-        });
+        bolt(ix,iy,tx,ty, 0.7+intensity*0.3, '#00ffcc');
 
-        function startRecording() {
-            isRecording = true;
-            recordedChunks = [];
-            recordBtn.classList.add('recording');
-            recStatus.style.display = 'flex';
-            startTime = Date.now();
-            timerInterval = setInterval(() => {
-                const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                recTime.textContent = `${String(Math.floor(elapsed / 60)).padStart(2,'0')}:${String(elapsed % 60).padStart(2,'0')}`;
-            }, 1000);
-
-            const canvasStream = canvas.captureStream(30);
-            if (video.srcObject && video.srcObject.getAudioTracks().length > 0) {
-                canvasStream.addTrack(video.srcObject.getAudioTracks()[0]);
+        // Satellite arcs when fingers nearly touch
+        if (intensity > 0.45) {
+            for (let k=0; k<Math.floor(intensity*5); k++) {
+                const ax = ix+(Math.random()-0.5)*130, ay = iy+(Math.random()-0.5)*130;
+                bolt(ix,iy,ax,ay, intensity*0.55, '#a78bfa');
             }
-
-            mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm;codecs=vp9' });
-            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `AI_FX_${Date.now()}.webm`;
-                a.click();
-            };
-            mediaRecorder.start();
         }
+    });
+}
 
-        function stopRecording() {
-            isRecording = false;
-            recordBtn.classList.remove('recording');
-            recStatus.style.display = 'none';
-            clearInterval(timerInterval);
-            mediaRecorder.stop();
+/* ═══════════════════════════════════════════════════════════
+   ✦  EFFECT 3 — GRAVITY WELL
+   Palm becomes an attractor. 600 chromatic particles orbit
+   and spiral in. Hand openness scales pull strength.
+   Chromatic shockwave rings pulse from the well center.
+═══════════════════════════════════════════════════════════ */
+let gravParts = (() => {
+    const arr = [];
+    for (let i=0;i<600;i++) arr.push({
+        x:Math.random()*W, y:Math.random()*H,
+        vx:(Math.random()-0.5)*1.4, vy:(Math.random()-0.5)*1.4,
+        size:1+Math.random()*2.5, hue:Math.random()*360
+    });
+    return arr;
+})();
+let gravRings = [];
+
+function palmCtr(hand) {
+    const idx=[0,5,9,13,17];
+    return {
+        x: lx(idx.reduce((s,i)=>s+hand[i].x,0)/idx.length),
+        y: ly(idx.reduce((s,i)=>s+hand[i].y,0)/idx.length)
+    };
+}
+function openness(hand) {
+    return Math.min(Math.hypot(lx(hand[12].x)-lx(hand[0].x), ly(hand[12].y)-ly(hand[0].y))/280, 1);
+}
+
+function drawGravityWell() {
+    let wells = [];
+    if (ai.hands) {
+        ai.hands.forEach(hand => {
+            const c = palmCtr(hand);
+            const o = openness(hand);
+            wells.push({ ...c, strength: 2.2 + (1-o)*4.5 });
+            if (t%8===0) gravRings.push({ x:c.x, y:c.y, r:0, alpha:0.75, color:`hsl(${(t*3)%360},100%,68%)` });
+        });
+    } else {
+        wells.push({ x:W/2, y:H/2, strength:0.45 });
+    }
+
+    // Rings
+    ctx.save();
+    for (let i=gravRings.length-1;i>=0;i--) {
+        const rg=gravRings[i];
+        rg.r+=5; rg.alpha-=0.024;
+        if(rg.alpha<=0){gravRings.splice(i,1);continue;}
+        ctx.globalAlpha=rg.alpha; ctx.strokeStyle=rg.color;
+        ctx.lineWidth=2; ctx.shadowBlur=10; ctx.shadowColor=rg.color;
+        ctx.beginPath(); ctx.arc(rg.x,rg.y,rg.r,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Particles
+    ctx.save();
+    gravParts.forEach(p => {
+        wells.forEach(w => {
+            const dx=w.x-p.x, dy=w.y-p.y;
+            const d=Math.max(Math.hypot(dx,dy),8);
+            const f=(w.strength*1100)/(d*d);
+            p.vx+=(dx/d)*f; p.vy+=(dy/d)*f;
+        });
+        p.vx*=0.975; p.vy*=0.975;
+        p.x+=p.vx; p.y+=p.vy;
+        const spd=Math.hypot(p.vx,p.vy);
+        const near=wells.some(w=>Math.hypot(w.x-p.x,w.y-p.y)<14);
+        if(p.x<0||p.x>W||p.y<0||p.y>H||near||spd>28){
+            p.x=Math.random()*W; p.y=Math.random()*H;
+            p.vx=(Math.random()-0.5)*1.4; p.vy=(Math.random()-0.5)*1.4;
         }
+        p.hue=(p.hue+0.4)%360;
+        ctx.globalAlpha=0.75; ctx.fillStyle=`hsl(${p.hue},100%,70%)`;
+        ctx.shadowBlur=4; ctx.shadowColor=ctx.fillStyle;
+        ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
+    });
+    ctx.restore();
 
-        // アプリ始動
-        initCamera();
-    </script>
+    // Core glow
+    wells.forEach(w=>{
+        if(w.strength<1)return;
+        const g=ctx.createRadialGradient(w.x,w.y,0,w.x,w.y,65);
+        g.addColorStop(0,'rgba(167,139,250,0.55)');
+        g.addColorStop(0.45,'rgba(0,255,204,0.12)');
+        g.addColorStop(1,'transparent');
+        ctx.save(); ctx.globalCompositeOperation='screen';
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(w.x,w.y,65,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+    });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ✦  EFFECT 4 — INK SPLASH
+   Finger velocity → ink drops + spray on persistent offscreen
+   canvas. Fast swipe = large splat + many drops.
+   Slow move = thin drip with gravity tail.
+   Hue shifts over time for chromatic ink variation.
+═══════════════════════════════════════════════════════════ */
+const inkCanvas = document.createElement('canvas');
+inkCanvas.width=W; inkCanvas.height=H;
+const inkCtx=inkCanvas.getContext('2d');
+let inkPrev={}, inkHue=200;
+
+function gauss() {
+    let u=0,v=0;
+    while(!u)u=Math.random(); while(!v)v=Math.random();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function drawInkSplash() {
+    inkCtx.fillStyle='rgba(0,0,0,0.0025)';
+    inkCtx.fillRect(0,0,W,H);
+
+    if (ai.hands) {
+        ai.hands.forEach((hand,hi)=>{
+            FINGER_TIPS.forEach((tip,fi)=>{
+                const idx=hi*5+fi;
+                const cx=lx(hand[tip].x), cy=ly(hand[tip].y);
+                if(inkPrev[idx]){
+                    const vx=(cx-inkPrev[idx].x), vy=(cy-inkPrev[idx].y);
+                    const spd=Math.hypot(vx,vy);
+                    inkHue=(inkHue+0.35)%360;
+                    if(spd>0.8){
+                        const sr=Math.min(spd*1.7,55);
+                        inkCtx.save();
+                        inkCtx.globalAlpha=0.65;
+                        inkCtx.fillStyle=`hsl(${inkHue},78%,28%)`;
+                        inkCtx.shadowBlur=5; inkCtx.shadowColor=`hsl(${inkHue},100%,50%)`;
+                        inkCtx.beginPath(); inkCtx.arc(cx,cy,sr*0.28,0,Math.PI*2); inkCtx.fill();
+                        inkCtx.restore();
+                        const drops=Math.floor(spd*0.75+3);
+                        for(let d=0;d<drops;d++){
+                            const angle=Math.atan2(vy,vx)+gauss()*0.75;
+                            const dl=spd*(0.5+Math.random()*2);
+                            const dx=cx+Math.cos(angle)*dl, dy=cy+Math.sin(angle)*dl;
+                            const r=Math.max(1,sr*0.11*Math.random());
+                            inkCtx.save();
+                            inkCtx.globalAlpha=0.45+Math.random()*0.45;
+                            inkCtx.fillStyle=`hsl(${inkHue+gauss()*18},82%,26%)`;
+                            inkCtx.beginPath(); inkCtx.arc(dx,dy,r,0,Math.PI*2); inkCtx.fill();
+                            if(r>1.5){
+                                inkCtx.lineWidth=r*0.55; inkCtx.strokeStyle=inkCtx.fillStyle;
+                                inkCtx.globalAlpha=0.28;
+                                inkCtx.beginPath(); inkCtx.moveTo(dx,dy); inkCtx.lineTo(dx,dy+r*3.5*(0.5+Math.random())); inkCtx.stroke();
+                            }
+                            inkCtx.restore();
+                        }
+                    }
+                }
+                inkPrev[idx]={x:cx,y:cy};
+            });
+        });
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation='multiply';
+    ctx.globalAlpha=0.9;
+    ctx.drawImage(inkCanvas,0,0);
+    ctx.restore();
+
+    if(ai.hands){
+        ai.hands.forEach(hand=>{
+            FINGER_TIPS.forEach(tip=>{
+                const gx=lx(hand[tip].x), gy=ly(hand[tip].y);
+                const g=ctx.createRadialGradient(gx,gy,0,gx,gy,18);
+                g.addColorStop(0,`hsla(${inkHue},100%,68%,0.85)`);
+                g.addColorStop(1,'transparent');
+                ctx.save(); ctx.globalCompositeOperation='screen';
+                ctx.fillStyle=g; ctx.beginPath(); ctx.arc(gx,gy,18,0,Math.PI*2); ctx.fill();
+                ctx.restore();
+            });
+        });
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ✦  EFFECT 5 — PORTAL RIFT
+   2 hands: distance between palms = portal radius.
+   1 hand: openness controls radius.
+   Interior: animated swirling vortex arms.
+   Rim: chromatic aberration distortion via pixel displacement.
+   Light rays bleed outward. Smooth lerp on all params.
+═══════════════════════════════════════════════════════════ */
+let portalAngle=0, portalR=120, portalX=W/2, portalY=H/2;
+let portalTX=W/2, portalTY=H/2, portalTR=120;
+
+function drawPortalRift() {
+    portalAngle += 0.016;
+
+    if(ai.hands && ai.hands.length>=2){
+        const a=palmCtr(ai.hands[0]), b=palmCtr(ai.hands[1]);
+        portalTX=(a.x+b.x)/2; portalTY=(a.y+b.y)/2;
+        portalTR=Math.min(Math.hypot(a.x-b.x,a.y-b.y)*0.58,290);
+    } else if(ai.hands && ai.hands.length===1){
+        const c=palmCtr(ai.hands[0]);
+        portalTX=c.x; portalTY=c.y;
+        portalTR=55+openness(ai.hands[0])*165;
+    } else {
+        portalTX=W/2; portalTY=H/2; portalTR=75;
+    }
+
+    portalX+=(portalTX-portalX)*0.09;
+    portalY+=(portalTY-portalY)*0.09;
+    portalR+=(portalTR-portalR)*0.1;
+
+    const px=portalX, py=portalY, pr=portalR;
+
+    // Rim pixel warp
+    const band=pr*0.32;
+    const imgD=ctx.getImageData(0,0,W,H);
+    const src=new Uint8ClampedArray(imgD.data);
+    const {data}=imgD;
+    const y0=Math.max(0,(py-pr-band)|0), y1=Math.min(H,(py+pr+band)|0);
+    const x0=Math.max(0,(px-pr-band)|0), x1=Math.min(W,(px+pr+band)|0);
+    for(let sy=y0;sy<y1;sy++){
+        for(let sx=x0;sx<x1;sx++){
+            const dx=sx-px, dy=sy-py, d=Math.hypot(dx,dy);
+            if(d>pr+band||d<pr-band) continue;
+            const frac=(d-(pr-band))/(band*2);
+            const warp=Math.sin(frac*Math.PI)*26;
+            const nx=Math.min(W-1,Math.max(0,(sx-(dx/d)*warp)|0));
+            const ny=Math.min(H-1,Math.max(0,(sy-(dy/d)*warp)|0));
+            const di=(sy*W+sx)*4, si=(ny*W+nx)*4;
+            data[di]=src[si]; data[di+1]=src[si+1]; data[di+2]=src[si+2];
+        }
+    }
+    ctx.putImageData(imgD,0,0);
+
+    // Interior void
+    ctx.save();
+    const void_=ctx.createRadialGradient(px,py,0,px,py,pr*0.9);
+    void_.addColorStop(0,'rgba(2,2,10,0.97)');
+    void_.addColorStop(0.55,'rgba(10,0,30,0.9)');
+    void_.addColorStop(1,'rgba(80,0,170,0.35)');
+    ctx.beginPath(); ctx.arc(px,py,pr*0.9,0,Math.PI*2);
+    ctx.fillStyle=void_; ctx.fill();
+
+    // Vortex arms
+    for(let arm=0;arm<6;arm++){
+        const a=portalAngle+(arm/6)*Math.PI*2;
+        ctx.save(); ctx.translate(px,py); ctx.rotate(a);
+        const ag=ctx.createLinearGradient(0,0,pr*0.82,0);
+        ag.addColorStop(0,'rgba(167,139,250,0)');
+        ag.addColorStop(0.28,`rgba(167,139,250,${0.38+Math.sin(t*0.05+arm)*0.14})`);
+        ag.addColorStop(0.7,'rgba(0,255,204,0.28)');
+        ag.addColorStop(1,'rgba(0,255,204,0)');
+        ctx.beginPath(); ctx.moveTo(0,0);
+        ctx.bezierCurveTo(pr*0.28,-pr*0.22,pr*0.58,pr*0.1,pr*0.82,0);
+        ctx.lineWidth=pr*0.11; ctx.strokeStyle=ag;
+        ctx.globalAlpha=0.68; ctx.stroke();
+        ctx.restore();
+    }
+
+    // Rim rings
+    for(let ring=0;ring<4;ring++){
+        const rr=pr+ring*5.5+Math.sin(t*0.04+ring)*3;
+        const hue_=(220+ring*22+t*0.5)%360;
+        ctx.beginPath(); ctx.arc(px,py,rr,0,Math.PI*2);
+        ctx.strokeStyle=`hsla(${hue_},100%,70%,${0.7-ring*0.15})`;
+        ctx.lineWidth=2.5-ring*0.4;
+        ctx.shadowBlur=14; ctx.shadowColor=`hsla(${hue_},100%,70%,0.8)`;
+        ctx.stroke();
+    }
+
+    // Light rays
+    for(let ray=0;ray<8;ray++){
+        const ra=portalAngle*0.65+(ray/8)*Math.PI*2;
+        const len=pr*(1.25+Math.sin(t*0.03+ray)*0.38);
+        const rg=ctx.createLinearGradient(px,py,px+Math.cos(ra)*len,py+Math.sin(ra)*len);
+        rg.addColorStop(0,'rgba(255,255,255,0.5)');
+        rg.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.save();
+        ctx.globalAlpha=0.22+Math.sin(t*0.04+ray)*0.08;
+        ctx.globalCompositeOperation='screen';
+        ctx.beginPath();
+        ctx.moveTo(px+Math.cos(ra)*pr*0.48,py+Math.sin(ra)*pr*0.48);
+        ctx.lineTo(px+Math.cos(ra)*len,py+Math.sin(ra)*len);
+        ctx.lineWidth=3+Math.random()*5;
+        ctx.strokeStyle=rg; ctx.stroke();
+        ctx.restore();
+    }
+    ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LEGACY EFFECTS
+═══════════════════════════════════════════════════════════ */
+let pulseR=0;
+function drawCyberEye() {
+    if(!ai.face) return;
+    pulseR=(pulseR+1)%60;
+    [ai.face[0],ai.face[1]].forEach(eye=>{
+        const x=lx(eye.x), y=ly(eye.y);
+        const p=Math.sin(pulseR*0.1)*4;
+        ctx.save();
+        ctx.shadowBlur=20; ctx.shadowColor='#00ffcc';
+        ctx.strokeStyle='#00ffcc'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.arc(x,y,28+p,0,Math.PI*2); ctx.stroke();
+        [[-42,0],[42,0],[0,-42],[0,42]].forEach(([dx,dy])=>{
+            ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+dx,y+dy); ctx.stroke();
+        });
+        const sa=(t*0.05)%(Math.PI*2);
+        ctx.beginPath(); ctx.moveTo(x,y);
+        ctx.lineTo(x+Math.cos(sa)*44,y+Math.sin(sa)*44);
+        ctx.strokeStyle='rgba(0,255,204,0.45)'; ctx.stroke();
+        ctx.fillStyle='#ff3b30'; ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+    });
+}
+
+let glT=0;
+function drawGlitch() {
+    glT++;
+    const ig=glT%22<4;
+    const imgD=ctx.getImageData(0,0,W,H);
+    const d=imgD.data, tmp=new Uint8ClampedArray(d);
+    const sh=ig?((Math.random()-0.5)*58)|0:0, sp=14;
+    for(let y=0;y<H;y++){
+        let ls=sh;
+        if(ig&&Math.random()<0.11) ls+=((Math.random()-0.5)*75)|0;
+        for(let x=0;x<W;x++){
+            const tx=(x+ls+W)%W;
+            const di=(y*W+x)*4;
+            d[di]  =tmp[(y*W+(tx-sp+W)%W)*4];
+            d[di+1]=tmp[(y*W+tx)*4+1];
+            d[di+2]=tmp[(y*W+(tx+sp)%W)*4+2];
+        }
+    }
+    if(ig){
+        const slY=(Math.random()*H)|0;
+        for(let x=0;x<W;x++){const di=(slY*W+x)*4;d[di]=255;d[di+1]=0;d[di+2]=80;}
+    }
+    ctx.putImageData(imgD,0,0);
+}
+
+let vT=0;
+function drawVHS() {
+    vT++;
+    ctx.save();
+    ctx.globalCompositeOperation='color-burn';
+    ctx.fillStyle='rgba(255,200,150,0.038)'; ctx.fillRect(0,0,W,H);
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.11)';
+    for(let i=vT%4;i<H;i+=4) ctx.fillRect(0,i,W,1);
+    if(Math.random()<0.07){
+        const ny=(Math.random()*H)|0;
+        ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.14})`; ctx.fillRect(0,ny,W,2+Math.random()*7|0);
+    }
+    ctx.font='bold 24px monospace'; ctx.fillStyle='#00ffcc'; ctx.globalAlpha=0.9;
+    ctx.fillText('● REC',40,52);
+    const d=new Date();
+    ctx.font='15px monospace'; ctx.fillStyle='rgba(255,255,255,.55)';
+    ctx.fillText(`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`,40,72);
+    ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UI CONTROLS
+═══════════════════════════════════════════════════════════ */
+fxRow.addEventListener('click', e => {
+    const chip = e.target.closest('.fx-chip');
+    if (!chip) return;
+    document.querySelectorAll('.fx-chip').forEach(c => c.classList.remove('on'));
+    chip.classList.add('on');
+    effect = chip.dataset.fx;
+    // Reset persistent effect state
+    fluidParts.length=0; fingerHist.forEach(h=>h.length=0);
+    inkCtx.clearRect(0,0,W,H); inkPrev={};
+    gravRings.length=0;
+    portalR=120;
+    fxHud.textContent=chip.textContent.trim();
+    fxHud.classList.add('show');
+    setTimeout(()=>fxHud.classList.remove('show'),1800);
+});
+
+camBtn.addEventListener('click', () => {
+    if(isRecording) stopRec();
+    camOn=!camOn;
+    if(camOn){
+        camBtn.classList.remove('danger'); camBtn.textContent='📷';
+        recBtn.classList.remove('off');
+        flipBtn.style.opacity='1'; flipBtn.style.pointerEvents='auto';
+        vid.play().catch(()=>{});
+    } else {
+        camBtn.classList.add('danger'); camBtn.textContent='❌';
+        recBtn.classList.add('off');
+        flipBtn.style.opacity='0.3'; flipBtn.style.pointerEvents='none';
+        vid.pause(); ai.face=null; ai.hands=null;
+    }
+});
+
+flipBtn.addEventListener('click', async () => {
+    if(!camOn) return;
+    flipBtn.classList.add('spin');
+    setTimeout(()=>flipBtn.classList.remove('spin'),400);
+    facingMode = facingMode==='user' ? 'environment' : 'user';
+    ai.face=null; ai.hands=null;
+    await startCamera(facingMode);
+});
+
+recBtn.addEventListener('click', () => { if(!camOn)return; isRecording?stopRec():startRec(); });
+
+function startRec() {
+    isRecording=true; recChunks=[];
+    recBtn.classList.add('going'); recStat.style.display='flex';
+    recStart=Date.now();
+    recTimer=setInterval(()=>{
+        const s=Math.floor((Date.now()-recStart)/1000);
+        recTime.textContent=`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    },1000);
+    const cs=canvas.captureStream(30);
+    const mime=['video/webm;codecs=vp9','video/webm','video/mp4'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+    mediaRec=new MediaRecorder(cs,mime?{mimeType:mime}:{});
+    mediaRec.ondataavailable=e=>{if(e.data.size>0)recChunks.push(e.data);};
+    mediaRec.onstop=()=>{
+        const blob=new Blob(recChunks,{type:'video/webm'});
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+        a.download=`AI_FX_${Date.now()}.webm`; a.click();
+    };
+    mediaRec.start();
+}
+function stopRec() {
+    isRecording=false; recBtn.classList.remove('going'); recStat.style.display='none';
+    clearInterval(recTimer);
+    if(mediaRec&&mediaRec.state!=='inactive') mediaRec.stop();
+}
+
+/* ─── BOOT ─── */
+startCamera(facingMode).then(renderLoop);
+</script>
 </body>
 </html>
